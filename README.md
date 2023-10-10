@@ -1,0 +1,2 @@
+# gitr
+git for nostr
