@@ -3,43 +3,73 @@ package cmd
 import (
 	"os"
 
+	"github.com/mleku/signr/pkg/signr"
+
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+var (
+	s            *signr.Signr
+	Pass, Custom string
 )
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "gitr",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Short: "A Git CLI with nostr support",
+	Long: `gitr
+	
+A replacement for git built on go-git that enables the use of nostr keys for authentication of commits, and integration into the HORNET Storage protocol.`,
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
+// Execute adds all child commands to the root command and sets flags
+// appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
+
 		os.Exit(1)
 	}
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.gitr.yaml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	var err error
+	// because this is a CLI app we know the user can enter passwords this way.
+	// other types of apps using this can load the environment variables.
+	s, err = signr.Init(signr.PasswordEntryViaTTY)
+	if err != nil {
+		s.Fatal("fatal error: %s\n", err)
+	}
+	rootCmd.PersistentFlags().BoolVarP(&s.Verbose,
+		"verbose", "v", false, "prints more things")
+	rootCmd.PersistentFlags().BoolVarP(&s.Color,
+		"color", "c", false, "prints more things")
+	cobra.OnInitialize(initConfig(s))
 }
 
+// initConfig reads in config file and ENV variables if set.
+func initConfig(cfg *signr.Signr) func() {
+	return func() {
+		viper.SetConfigName(signr.ConfigName)
+		viper.SetConfigType(signr.ConfigExt)
+		viper.AddConfigPath(cfg.DataDir)
+		// read in environment variables that match
+		viper.SetEnvPrefix(signr.AppName)
+		viper.AutomaticEnv()
+		// If a config file is found, read it in.
+		if err := viper.ReadInConfig(); err == nil && cfg.Verbose {
+			cfg.Log("Using config file: %s\n", viper.ConfigFileUsed())
+		}
 
+		// if pass is given on CLI it overrides environment, but if it is empty and environment has a value, load it
+		if Pass == "" {
+			if p := viper.GetString("pass"); p != "" {
+				Pass = p
+			}
+		}
+
+		cfg.DefaultKey = viper.GetString("default")
+	}
+}
